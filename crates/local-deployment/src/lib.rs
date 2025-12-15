@@ -268,6 +268,10 @@ impl LocalDeployment {
         self.remote_client.clone()
     }
 
+    pub fn local_container(&self) -> &LocalContainerService {
+        &self.container
+    }
+
     pub async fn get_login_status(&self) -> LoginStatus {
         if self.auth_context.get_credentials().await.is_none() {
             self.auth_context.clear_profile().await;

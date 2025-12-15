@@ -56,6 +56,7 @@ use services::services::{
     queued_message::QueuedMessageService,
     share::SharePublisher,
     worktree_manager::{WorktreeCleanup, WorktreeManager},
+    server_manager::ServerManager,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 use tokio_util::io::ReaderStream;
@@ -82,6 +83,7 @@ pub struct LocalContainerService {
     queued_message_service: QueuedMessageService,
     publisher: Result<SharePublisher, RemoteClientNotConfigured>,
     notification_service: NotificationService,
+    server_manager: ServerManager,
 }
 
 impl LocalContainerService {
@@ -114,6 +116,7 @@ impl LocalContainerService {
             queued_message_service,
             publisher,
             notification_service,
+            server_manager: ServerManager::new(),
         };
 
         container.spawn_worktree_cleanup().await;
@@ -782,6 +785,57 @@ impl LocalContainerService {
         )
         .await
     }
+
+    pub async fn launch_server_mode(
+        &self,
+        path: &Path,
+        port: Option<u16>,
+    ) -> Result<u16, ContainerError> {
+        let path = path.canonicalize()?;
+        
+        // Check if already running via manager
+        if let Some(info) = self.server_manager.get_server(&path).await {
+            tracing::info!("Server already running for {:?} on port {}", path, info.port);
+            return Ok(info.port);
+        }
+
+        let port = port.unwrap_or(0); 
+        let actual_port = if port == 0 {
+             std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port()
+        } else {
+             port
+        };
+        
+        // Spawn process
+        let output = std::process::Command::new("npx")
+            .arg("-y")
+            .arg("opencode-ai@1.0.134")
+            .arg("server")
+            .arg("--host")
+            .arg("127.0.0.1")
+            .arg("--port")
+            .arg(actual_port.to_string())
+            .current_dir(&path)
+            .stdout(std::process::Stdio::null()) 
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        match output {
+            Ok(child) => {
+                let pid = child.id();
+                tracing::info!("Started opencode server for {:?} on port {} (pid: {})", path, actual_port, pid);
+                self.server_manager.register_server(path, pid, actual_port).await;
+                
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                
+                Ok(actual_port)
+            }
+            Err(e) => {
+                 tracing::error!("Failed to spawn opencode server: {}", e);
+                 Err(ContainerError::Io(e))
+            }
+        }
+    }
 }
 
 fn failure_exit_status() -> std::process::ExitStatus {
@@ -824,10 +878,21 @@ impl ContainerService for LocalContainerService {
     }
 
     fn task_attempt_to_current_dir(&self, task_attempt: &TaskAttempt) -> PathBuf {
-        PathBuf::from(task_attempt.container_ref.clone().unwrap_or_default())
+        let ref_str = task_attempt.container_ref.clone().unwrap_or_default();
+        if let Some(path) = ref_str.strip_prefix("cwd://") {
+             PathBuf::from(path)
+        } else {
+             PathBuf::from(ref_str)
+        }
     }
     /// Create a container
     async fn create(&self, task_attempt: &TaskAttempt) -> Result<ContainerRef, ContainerError> {
+        if let Some(ref c) = task_attempt.container_ref {
+            if c.starts_with("cwd://") {
+                 return Ok(c.clone());
+            }
+        }
+
         let task = task_attempt
             .parent_task(&self.db.pool)
             .await?
@@ -929,6 +994,19 @@ impl ContainerService for LocalContainerService {
         let container_ref = task_attempt.container_ref.as_ref().ok_or_else(|| {
             ContainerError::Other(anyhow!("Container ref not found for task attempt"))
         })?;
+
+        if let Some(cwd_path) = container_ref.strip_prefix("cwd://") {
+             let path = PathBuf::from(cwd_path);
+             if !path.exists() {
+                 return Err(ContainerError::Other(anyhow!("CWD Path does not exist: {}", cwd_path)));
+             }
+             // For CWD, we verify it is likely a valid project (has .git?)
+             if !path.join(".git").exists() {
+                  tracing::warn!("CWD execution path {} does not strictly look like a git repo", cwd_path);
+             }
+             return Ok(container_ref.to_string());
+        }
+
         let worktree_path = PathBuf::from(container_ref);
 
         WorktreeManager::ensure_worktree_exists(
