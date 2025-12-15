@@ -151,26 +151,46 @@ Harden the resilience of the VK system by addressing server restart recovery, pr
 9. B3.1 - cwd_lock table
 10. B3.2 - Lock enforcement
 
-### Phase 5 (Executor Hardening)
-14. A4.1 - OpenCode log streaming
-15. A4.2 - OpenCode session resume
-16. A4.3 - Codex Otel config
-17. A4.4 - Codex session recovery
+### Phase 5 (Part C - External Integration)
+14. C1.1 - OTel Configuration for Codex
+15. C1.2 - Session Done Hook Handler
+16. C2.1 - Opencode SDK Integration
 
 ---
 
-## A4. Executor-Specific Hardening
+# Part C: External Integration & Observability
+
+## C1. Codex Observability & Hooks
 
 ### Problem
-- **OpenCode**: external logs in `~/.local/share/opencode/log/` are not captured in DB; "sophisticated API" for sessions not fully utilized for recovery.
-- **Codex**: Otel capabilities unused; session state exists in `.codex/sessions` but restart logic might not pick it up automatically.
+- Codex runs as a black box; internal state usage (token usage, session end) is opaque.
+- Reliance on process exit for "done" is brittle.
+
+### Capabilities (Researched)
+- Codex supports OTel via `config.toml` (exporter setup).
+- Emits `session.start` / `session.end` events.
 
 ### Tasks
 | ID | Task | Priority |
 |----|------|----------|
-| A4.1 | Stream OpenCode logs from `~/.local/share/opencode/log/` to `ExecutionProcessLogs` (tail & persist) | High |
-| A4.2 | Implement `SessionManager` trait for OpenCode to utilize SDK/CLI `session resume` on process restart | High |
-| A4.3 | Expose Codex Otel configuration (endpoint/sampling) in `Codex` executor config | Low |
-| A4.4 | Verify and wire up Codex `resume_conversation` for crashed task attempts (ensure `rollout` file is found) | Medium |
-| A4.5 | Add listener for "Session DONE" hooks in OpenCode (via SDK) and Codex (verify `task_complete` handling) to finalize state reliably | Medium |
+| C1.1 | Configure `~/.codex/config.toml` to export OTel to local collector (or internal receiver) | Low |
+| C1.2 | Implement internal OTel receiver (trace/log) to listen for `session.end` | Low |
+| C1.3 | Trigger "Session Done" hook in `LocalContainerService` on `session.end` event | Low |
+
+## C2. Opencode Session Management
+
+### Problem
+- Opencode session state monitoring via process output is limited.
+- "Serve mode" logs can be interleaved.
+
+### Capabilities (Researched)
+- `OPENCODE_LOG=debug` provides detailed traces.
+- SDKs (Go/Python) allow programmatic session management.
+
+### Tasks
+| ID | Task | Priority |
+|----|------|----------|
+| C2.1 | Integrate Opencode SDK (or API client) to poll session status explicitly | Low |
+| C2.2 | Ingest `OPENCODE_LOG` streams into `KB` (KnowledgeBase) or structural log store | Low |
+| C2.3 | Correlate `session_id` from Opencode logs with VK `attempt_id` | Low |
 
