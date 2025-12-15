@@ -151,7 +151,26 @@ Harden the resilience of the VK system by addressing server restart recovery, pr
 9. B3.1 - cwd_lock table
 10. B3.2 - Lock enforcement
 
-### Phase 4 (Part B - Medium)
-11. B2.4 - Log repo status
-12. B1.3 - execution_mode column
-13. B3.4 - is_cwd_execution flag
+### Phase 5 (Executor Hardening)
+14. A4.1 - OpenCode log streaming
+15. A4.2 - OpenCode session resume
+16. A4.3 - Codex Otel config
+17. A4.4 - Codex session recovery
+
+---
+
+## A4. Executor-Specific Hardening
+
+### Problem
+- **OpenCode**: external logs in `~/.local/share/opencode/log/` are not captured in DB; "sophisticated API" for sessions not fully utilized for recovery.
+- **Codex**: Otel capabilities unused; session state exists in `.codex/sessions` but restart logic might not pick it up automatically.
+
+### Tasks
+| ID | Task | Priority |
+|----|------|----------|
+| A4.1 | Stream OpenCode logs from `~/.local/share/opencode/log/` to `ExecutionProcessLogs` (tail & persist) | High |
+| A4.2 | Implement `SessionManager` trait for OpenCode to utilize SDK/CLI `session resume` on process restart | High |
+| A4.3 | Expose Codex Otel configuration (endpoint/sampling) in `Codex` executor config | Low |
+| A4.4 | Verify and wire up Codex `resume_conversation` for crashed task attempts (ensure `rollout` file is found) | Medium |
+| A4.5 | Add listener for "Session DONE" hooks in OpenCode (via SDK) and Codex (verify `task_complete` handling) to finalize state reliably | Medium |
+
