@@ -101,6 +101,7 @@ pub struct CreateTaskAttemptBody {
     /// Executor profile specification
     pub executor_profile_id: ExecutorProfileId,
     pub base_branch: String,
+    pub use_local_cwd: Option<bool>,
 }
 
 impl CreateTaskAttemptBody {
@@ -143,7 +144,9 @@ pub async fn create_task_attempt(
         .git_branch_from_task_attempt(&attempt_id, &task.title)
         .await;
 
-    let task_attempt = TaskAttempt::create(
+
+
+    let mut task_attempt = TaskAttempt::create(
         pool,
         &CreateTaskAttempt {
             executor: executor_profile_id.executor,
@@ -154,6 +157,20 @@ pub async fn create_task_attempt(
         payload.task_id,
     )
     .await?;
+
+    if payload.use_local_cwd.unwrap_or(false) {
+        // For local CWD execution, we use the project's repo path directly
+        // We assume the project path IS the CWD we want to use.
+        // We use cwd:// prefix to indicate this.
+        let project = Project::find_by_id(pool, task.project_id)
+             .await?
+             .ok_or(SqlxError::RowNotFound)?;
+        
+        let cwd_ref = format!("cwd://{}", project.git_repo_path.display());
+        
+        TaskAttempt::update_container_ref(pool, task_attempt.id, &cwd_ref).await?;
+        task_attempt.container_ref = Some(cwd_ref);
+    }
 
     if let Err(err) = deployment
         .container()
