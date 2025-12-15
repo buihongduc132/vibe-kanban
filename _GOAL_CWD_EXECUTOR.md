@@ -59,3 +59,47 @@ type in the path themself ( though they can add it if they want).
 - API: expose new endpoints for project-dir execution, server-mode lifecycle (start/stop/status), and repo discovery; keep backward-compatible response envelopes. Document no-op responses for unsupported agents.
 - Testing: unit tests for path validation, templating, registry reuse, discovery filtering; integration tests for spawn and server-mode lifecycle on alt port; UI checks for population + warning states.
 - Non-goals: changing main worktree launcher semantics; supporting non-opencode server-mode in this phase.
+
+---
+
+## Implementation Status (2025-12-15)
+
+### Covered ✅
+| Feature | Status | Notes |
+|---------|--------|-------|
+| CWD path detection (`cwd://` prefix) | ✅ | `ensure_container_exists` and `task_attempt_to_current_dir` skip worktree logic |
+| CWD bypasses worktree creation | ✅ | Returns path directly if `cwd://` prefix detected |
+| CWD bypasses worktree cleanup | ✅ | `delete_inner` not invoked for CWD paths |
+| Server registry (path → port/pid) | ✅ | `ServerManager` with in-memory HashMap |
+| Server reuse (same dir returns existing) | ✅ | `get_server` checks process liveness via signal 0 |
+| Project discovery (scan for .git) | ✅ | Uses `ignore::WalkBuilder`, max depth 4 |
+| Recency filter (14 days) | ✅ | `SystemTime` comparison with limit |
+| Discovery API endpoint | ✅ | `GET /api/discovery` |
+| Server launch API endpoint | ✅ | `POST /api/server/start` |
+
+### Uncovered / TODO ❌
+| Edge Case | Status | Required Action |
+|-----------|--------|-----------------|
+| **No-op for non-opencode agents** | ❌ | Add guard in `start_attempt`/`create_task_attempt` to reject or warn if executor is not `OPENCODE` when `use_local_cwd: true` |
+| **Concurrent CWD launch protection** | ❌ | Serialize or reject concurrent task attempts on same CWD path to avoid conflicts |
+| **CWD dirty working tree warning** | ❌ | Check for uncommitted changes before CWD execution; emit warning |
+| **CWD branch/PR compatibility** | ❌ | Emit warning if user expects PR integration but CWD mode is active |
+| **Server health check polling** | ❌ | After spawn, poll the port for readiness before returning URL |
+| **Server cleanup on app shutdown** | ❌ | Implement graceful shutdown hook to kill registered servers |
+| **Server crash-loop detection** | ❌ | Track respawn count; fail after N crashes |
+| **Stale pidfile cleanup** | ❌ | Persist `ServerInfo` to file; check on startup and clean stale entries |
+| **Discovery result caching** | ❌ | Cache discovery results with timeout to avoid repeated rescans |
+| **Discovery timeout for large trees** | ❌ | Add configurable timeout for directory scans |
+| **Submodule handling** | ❌ | Determine whether to include/exclude submodules in discovery |
+| **Network filesystem handling** | ❌ | Add timeouts for slow/network paths |
+| **Missing remote warning** | ❌ | Warn if git repo has no remote configured |
+| **Cleanup script safety for CWD** | ❌ | Warn or skip cleanup scripts for CWD mode to avoid destructive actions |
+| **Approvals path validation for CWD** | ❌ | Verify approvals service works correctly with CWD paths |
+
+### Partial / In-Progress ⚠️
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Process liveness check | ⚠️ | Unix only (signal 0); Windows returns `true` unconditionally |
+| Templated host/port for server | ⚠️ | Port allocation exists; templating for arbitrary args not implemented |
+| Git repo validation for CWD | ⚠️ | Logs warning if `.git` missing but does not fail |
+
