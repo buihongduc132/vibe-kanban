@@ -166,31 +166,91 @@ Harden the resilience of the VK system by addressing server restart recovery, pr
 - Codex runs as a black box; internal state usage (token usage, session end) is opaque.
 - Reliance on process exit for "done" is brittle.
 
+### Source Documentation
+- **Config Docs**: [github.com/openai/codex/blob/main/docs/config.md#otel](https://github.com/openai/codex/blob/main/docs/config.md#otel)
+- **Config File**: `~/.codex/config.toml`
+
 ### Capabilities (Researched)
-- Codex supports OTel via `config.toml` (exporter setup).
-- Emits `session.start` / `session.end` events.
+Codex emits OpenTelemetry **log events** (not traces/spans) via OTLP exporters.
+
+**Config Example** (`~/.codex/config.toml`):
+```toml
+[otel]
+environment = "staging"      # defaults to "dev"
+exporter = "otlp-http"       # or "otlp-grpc" or "none"
+log_user_prompt = false      # redact prompts unless true
+
+[otel.exporter."otlp-http"]
+endpoint = "http://localhost:4318/v1/logs"
+protocol = "binary"
+
+[otel.exporter."otlp-http".headers]
+"x-otlp-api-key" = "${OTLP_TOKEN}"
+```
+
+### Event Catalog (Data Shapes)
+| Event Name | Key Fields |
+|------------|------------|
+| `codex.conversation_starts` | `provider_name`, `reasoning_effort`, `approval_policy`, `sandbox_policy`, `mcp_servers` |
+| `codex.api_request` | `attempt`, `duration_ms`, `http.response.status_code`, `error.message` |
+| `codex.sse_event` | `event.kind`, `duration_ms`, `input_token_count`, `output_token_count`, `cached_token_count`, `reasoning_token_count` |
+| `codex.user_prompt` | `prompt_length`, `prompt` (redacted unless `log_user_prompt=true`) |
+| `codex.tool_decision` | `tool_name`, `call_id`, `decision` (approved/denied/abort), `source` (config/user) |
+| `codex.tool_result` | `tool_name`, `call_id`, `arguments`, `duration_ms`, `success`, `output` |
+
+**Common Metadata**: `event.timestamp`, `conversation.id`, `app.version`, `auth_mode`, `user.account_id`, `user.email`, `terminal.type`, `model`, `slug`
 
 ### Tasks
 | ID | Task | Priority |
 |----|------|----------|
-| C1.1 | Configure `~/.codex/config.toml` to export OTel to local collector (or internal receiver) | Low |
-| C1.2 | Implement internal OTel receiver (trace/log) to listen for `session.end` | Low |
-| C1.3 | Trigger "Session Done" hook in `LocalContainerService` on `session.end` event | Low |
+| C1.1 | Configure `~/.codex/config.toml` to export OTel to local collector (otlp-http to `localhost:4318`) | Low |
+| C1.2 | Implement internal OTel log receiver to listen for `codex.tool_result` events | Low |
+| C1.3 | Trigger "Session Done" hook in `LocalContainerService` when all tool_results are received and process exits | Low |
+
+---
 
 ## C2. Opencode Session Management
 
 ### Problem
 - Opencode session state monitoring via process output is limited.
-- "Serve mode" logs can be interleaved.
+- "Serve mode" logs can be interleaved across sessions.
+
+### Source Documentation
+- **Config Schema**: [opencode.ai/config.json](https://opencode.ai/config.json)
+- **Docs**: [opencode.ai/docs/config](https://opencode.ai/docs/config)
+- **SDK (Go)**: [pkg.go.dev/opencode.ai/sdk](https://pkg.go.dev/opencode.ai/sdk)
+- **SDK (Python)**: [pypi.org/project/opencode-sdk](https://pypi.org/project/opencode-sdk)
 
 ### Capabilities (Researched)
-- `OPENCODE_LOG=debug` provides detailed traces.
-- SDKs (Go/Python) allow programmatic session management.
+- `OPENCODE_LOG=info|debug` enables logging via stdout.
+- `internal/session` package in Go implementation manages session state.
+- REST API available; SDKs provide typed access.
+
+**Logging Config** (env var):
+```bash
+OPENCODE_LOG=debug opencode
+```
+
+**Config File** (`opencode.json` or `.opencode.json`):
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "tui": { "theme": "dark" },
+  "providers": { ... },
+  "agents": { "build": { ... }, "plan": { ... } }
+}
+```
+
+### Known Limitations
+- No native OTel export (unlike Codex).
+- Session completion detection relies on process exit or SDK polling.
+- Serve mode session tags can be overwritten across concurrent sessions (GitHub issue noted).
 
 ### Tasks
 | ID | Task | Priority |
 |----|------|----------|
-| C2.1 | Integrate Opencode SDK (or API client) to poll session status explicitly | Low |
-| C2.2 | Ingest `OPENCODE_LOG` streams into `KB` (KnowledgeBase) or structural log store | Low |
-| C2.3 | Correlate `session_id` from Opencode logs with VK `attempt_id` | Low |
+| C2.1 | Integrate Opencode SDK (Go or HTTP client) to poll session status explicitly | Low |
+| C2.2 | Parse `OPENCODE_LOG=debug` output to extract `session_id` and correlate with VK `attempt_id` | Low |
+| C2.3 | Implement session idle detection timeout (fallback if no explicit hook available) | Low |
+
 
