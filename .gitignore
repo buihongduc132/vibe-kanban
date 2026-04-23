@@ -95,3 +95,14 @@ vibe-kanban-cloud/
 *.ts.net.key
 Caddyfile
 Caddyfile.dev
+
+# Added by maintenance script
+venv/
+.venv/
+.abw/
+logs/
+__pycache__/
+.pytest_cache/
+dist/
+build/
+*.log
