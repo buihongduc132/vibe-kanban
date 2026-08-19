@@ -1,0 +1,75 @@
+wing: vibe_kanban
+rooms:
+- name: patches
+  description: Files from patches/
+  keywords:
+  - patches
+  - patches
+- name: crates
+  description: Files from crates/
+  keywords:
+  - crates
+  - crates
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: npx_cli
+  description: Files from npx-cli/
+  keywords:
+  - npx_cli
+  - npx-cli
+- name: packages
+  description: Files from packages/
+  keywords:
+  - packages
+  - packages
+- name: matrix_data
+  description: Files from matrix-data/
+  keywords:
+  - matrix_data
+  - matrix-data
+- name: shared
+  description: Files from shared/
+  keywords:
+  - shared
+  - shared
+- name: design
+  description: Files from assets/
+  keywords:
+  - design
+  - assets
+- name: dev_assets_seed
+  description: Files from dev_assets_seed/
+  keywords:
+  - dev_assets_seed
+  - dev_assets_seed
+- name: dev_assets
+  description: Files from dev_assets/
+  keywords:
+  - dev_assets
+  - dev_assets
+- name: scripts
+  description: Files from scripts/
+  keywords:
+  - scripts
+  - scripts
+- name: backend
+  description: Files from services/
+  keywords:
+  - backend
+  - services
+- name: configuration
+  description: Files from settings/
+  keywords:
+  - configuration
+  - settings
+- name: frontend
+  description: Files from ui/
+  keywords:
+  - frontend
+  - ui
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
